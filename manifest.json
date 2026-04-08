@@ -1,0 +1,25 @@
+{
+  "name": "GEO-CACHE Venaco",
+  "short_name": "GEO-CACHE",
+  "description": "Cache-cache GPS en plein village",
+  "start_url": "/geocache/",
+  "scope": "/geocache/",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#060612",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

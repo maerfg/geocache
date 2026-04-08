@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GEO-CACHE | Venaco</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="GEO-CACHE">
+    <meta name="theme-color" content="#4f46e5">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700;900&family=JetBrains+Mono:wght@700&display=swap');
+
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: #060612;
+            color: white;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            height: 100dvh;
+        }
+
+        #map-container {
+            height: 100%;
+            width: 100%;
+        }
+
+        .leaflet-div-icon { background: transparent !important; border: none !important; }
+        .leaflet-control-attribution { display: none !important; }
+        .leaflet-tile { filter: brightness(0.75) contrast(1.15) saturate(0.8); }
+
+        .glass {
+            background: rgba(6, 6, 18, 0.82);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(0.6); opacity: 0.9; }
+            100% { transform: scale(2.8); opacity: 0; }
+        }
+        .pulse-ring {
+            position: absolute;
+            inset: -4px;
+            border-radius: 50%;
+            animation: pulse-ring 2s ease-out infinite;
+        }
+
+        @keyframes spin-slow { to { transform: rotate(360deg); } }
+        .spin-slow { animation: spin-slow 8s linear infinite; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+        .fade-in { animation: fadeIn 0.3s ease forwards; }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        input {
+            -webkit-appearance: none;
+            background: rgba(255,255,255,0.04);
+            border: 1.5px solid rgba(255,255,255,0.1);
+            color: white;
+            border-radius: 16px;
+            padding: 16px 20px;
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 700;
+            font-size: 16px;
+            width: 100%;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input:focus { border-color: #6366f1; }
+        input::placeholder { color: rgba(255,255,255,0.2); font-weight: 400; }
+
+        .btn-primary {
+            background: #4f46e5;
+            color: white;
+            border: none;
+            border-radius: 16px;
+            padding: 18px 24px;
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 900;
+            font-size: 18px;
+            letter-spacing: 0.05em;
+            width: 100%;
+            cursor: pointer;
+            transition: background 0.15s, transform 0.1s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn-primary:active { background: #4338ca; transform: scale(0.97); }
+        .btn-primary:disabled { background: #2d2b50; color: #555; cursor: not-allowed; }
+
+        .role-btn {
+            background: rgba(255,255,255,0.03);
+            border: 2px solid rgba(255,255,255,0.08);
+            border-radius: 20px;
+            padding: 20px 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .role-btn.selected-hider { border-color: #ef4444; background: rgba(239,68,68,0.1); }
+        .role-btn.selected-seeker { border-color: #6366f1; background: rgba(99,102,241,0.1); }
+
+        #status-bar {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .marker-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            font-size: 9px;
+        }
+    </style>
+</head>
+<body>
+<div id="app" class="h-screen flex flex-col">
+
+    <!-- ═══════════════════════════════════ ÉCRAN BIENVENUE ═══════ -->
+    <div id="step-welcome" class="h-screen flex flex-col items-center justify-center p-8 text-center">
+        <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(79,70,229,0.15)_0%,transparent_70%)] pointer-events-none"></div>
+        <div class="relative z-10 flex flex-col items-center gap-6 max-w-xs w-full">
+            <div class="w-20 h-20 bg-indigo-600 rounded-3xl rotate-12 flex items-center justify-center shadow-2xl shadow-indigo-900/50 border border-indigo-400/30">
+                <i data-lucide="crosshair" class="w-10 h-10 text-white -rotate-12"></i>
+            </div>
+            <div>
+                <h1 class="text-5xl font-black tracking-tighter mb-1">GEO·CACHE</h1>
+                <p class="text-indigo-400 font-bold uppercase tracking-[0.4em] text-[10px]">Venaco Edition</p>
+            </div>
+            <p class="text-slate-500 text-sm leading-relaxed">Cache-cache GPS en plein village. Chasseurs vs Cachés. GPS en temps réel.</p>
+            <button class="btn-primary mt-4" onclick="requestGpsAndLobby()">
+                COMMENCER
+            </button>
+            <p id="gps-status" class="text-[10px] text-slate-500 uppercase tracking-widest hidden mt-2">Autorisation GPS en cours...</p>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════ LOBBY ═══════ -->
+    <div id="step-lobby" class="hidden h-screen overflow-y-auto no-scrollbar">
+        <div class="p-6 pt-12 max-w-sm mx-auto flex flex-col gap-6 min-h-full">
+            <div>
+                <h2 class="text-3xl font-black tracking-tight">Configuration</h2>
+                <p class="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">Rejoins ou crée une partie</p>
+            </div>
+
+            <div class="flex flex-col gap-3">
+                <div>
+                    <label class="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1 mb-2 block">Ton pseudo</label>
+                    <input id="input-name" type="text" placeholder="GHOST-01" maxlength="12">
+                </div>
+                <div>
+                    <label class="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1 mb-2 block">Code lobby (même code = même partie)</label>
+                    <input id="input-gameid" type="text" placeholder="EX: VENACO-TEAM" maxlength="20">
+                    <p class="text-[9px] text-slate-600 mt-1.5 ml-1">Tous les joueurs doivent entrer le même code.</p>
+                </div>
+
+                <div>
+                    <label class="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1 mb-2 block">Ton rôle</label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <button id="btn-hider" class="role-btn" onclick="setRole('hider')">
+                            <span class="text-3xl">🏃</span>
+                            <div>
+                                <p class="font-black text-[11px] uppercase">Caché</p>
+                                <p class="text-[9px] text-slate-500 mt-0.5">Ta position est visible des chasseurs</p>
+                            </div>
+                        </button>
+                        <button id="btn-seeker" class="role-btn" onclick="setRole('seeker')">
+                            <span class="text-3xl">🔍</span>
+                            <div>
+                                <p class="font-black text-[11px] uppercase">Chasseur</p>
+                                <p class="text-[9px] text-slate-500 mt-0.5">Traque et attrape les cachés</p>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="lobby-status" class="hidden glass rounded-2xl p-4 text-center">
+                    <p class="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1" id="lobby-status-label">Connexion P2P...</p>
+                    <p class="text-xs text-slate-400" id="lobby-status-detail"></p>
+                </div>
+
+                <button id="btn-deploy" class="btn-primary mt-2" onclick="startGame()">
+                    DÉPLOYER
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════ JEU ══════════ -->
+    <div id="step-playing" class="hidden h-screen relative">
+        <div id="map-container" class="absolute inset-0"></div>
+
+        <!-- Haut gauche : Timer -->
+        <div class="absolute top-4 left-4 z-[1000] glass rounded-2xl px-4 py-3 flex items-center gap-3 shadow-xl">
+            <i data-lucide="timer" class="w-5 h-5 text-indigo-400 shrink-0"></i>
+            <div>
+                <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none">Temps restant</p>
+                <p id="timer-text" class="text-xl font-black leading-tight" style="font-family:'JetBrains Mono',monospace">10:00</p>
+            </div>
+        </div>
+
+        <!-- Haut droite : Escouade + quitter -->
+        <div class="absolute top-4 right-4 z-[1000] flex flex-col items-end gap-2">
+            <div class="glass rounded-2xl p-3 min-w-[130px] max-h-52 overflow-y-auto no-scrollbar shadow-xl">
+                <div class="flex items-center justify-between mb-2 pb-2 border-b border-white/10">
+                    <span class="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Escouade</span>
+                    <span id="player-count" class="bg-indigo-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full leading-none">1</span>
+                </div>
+                <div id="squad-list" class="flex flex-col gap-1.5"></div>
+            </div>
+            <button onclick="location.reload()" class="glass p-2.5 rounded-xl shadow-xl active:scale-95 transition-transform">
+                <i data-lucide="log-out" class="w-4 h-4 text-red-400"></i>
+            </button>
+        </div>
+
+        <!-- Bouton Gel (chasseurs seulement, toujours visible, débloqué à 7:00) -->
+        <div id="freeze-container" class="hidden absolute bottom-28 right-5 z-[1000] flex flex-col items-center gap-1">
+            <button id="btn-freeze" onclick="triggerFreeze()" disabled class="w-16 h-16 rounded-2xl glass border border-slate-700 flex flex-col items-center justify-center shadow-xl transition-all opacity-40 cursor-not-allowed">
+                <i data-lucide="snowflake" class="w-7 h-7 text-slate-500"></i>
+                <span class="text-[8px] font-black uppercase text-slate-500 mt-0.5">Geler</span>
+            </button>
+            <span class="text-[8px] font-bold text-slate-500 uppercase" id="freeze-uses">dispo 7:00</span>
+        </div>
+
+        <!-- Bas : Info joueur -->
+        <div class="absolute bottom-5 left-4 right-4 z-[1000] glass rounded-3xl p-4 shadow-xl border border-white/5 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div id="role-icon-box" class="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl border border-white/10 bg-white/5">🏃</div>
+                <div>
+                    <p id="display-name" class="text-lg font-black tracking-tight uppercase leading-none"></p>
+                    <p id="display-role" class="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mt-0.5"></p>
+                </div>
+            </div>
+            <div class="text-right">
+                <p class="text-[9px] text-slate-600 uppercase font-bold mb-0.5">Lobby</p>
+                <p id="display-room" class="text-[11px] font-black text-indigo-300" style="font-family:'JetBrains Mono',monospace"></p>
+            </div>
+        </div>
+
+        <!-- Status P2P discret -->
+        <div id="p2p-status" class="absolute bottom-24 left-4 z-[1000] hidden">
+            <span class="glass text-[9px] font-bold px-2 py-1 rounded-lg text-yellow-400 border border-yellow-500/20" id="p2p-status-text"></span>
+        </div>
+
+        <!-- Overlay Salle d'attente (non-hôtes avant le lancement) -->
+        <div id="waiting-overlay" class="hidden absolute inset-0 z-[1500] bg-black/70 backdrop-blur-md flex flex-col items-center justify-center">
+            <div class="glass p-10 rounded-[2rem] border border-white/10 text-center shadow-2xl max-w-xs w-full mx-4 flex flex-col items-center gap-4">
+                <div class="w-16 h-16 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center">
+                    <i data-lucide="users" class="w-8 h-8 text-indigo-400"></i>
+                </div>
+                <div>
+                    <h2 class="text-2xl font-black uppercase">En attente</h2>
+                    <p class="text-slate-400 text-sm mt-1">L'hôte va lancer la partie…</p>
+                </div>
+                <div id="waiting-squad" class="w-full flex flex-col gap-1.5 mt-2"></div>
+            </div>
+        </div>
+
+        <!-- Overlay Hôte : bouton lancer -->
+        <div id="host-launch-overlay" class="hidden absolute inset-0 z-[1500] bg-black/70 backdrop-blur-md flex flex-col items-center justify-center">
+            <div class="glass p-10 rounded-[2rem] border border-white/10 text-center shadow-2xl max-w-xs w-full mx-4 flex flex-col items-center gap-5">
+                <div class="w-16 h-16 rounded-2xl bg-green-600/20 border border-green-500/30 flex items-center justify-center">
+                    <i data-lucide="crown" class="w-8 h-8 text-yellow-400"></i>
+                </div>
+                <div>
+                    <p class="text-[10px] font-black text-yellow-400 uppercase tracking-widest mb-1">Tu es l'hôte</p>
+                    <h2 class="text-2xl font-black uppercase">Prêt à lancer ?</h2>
+                    <p class="text-slate-400 text-sm mt-1">Les cachés auront 2 min pour se planquer.</p>
+                </div>
+                <div id="host-squad" class="w-full flex flex-col gap-1.5"></div>
+                <button class="btn-primary" onclick="hostLaunchGame()">🚀 LANCER LA PARTIE</button>
+            </div>
+        </div>
+
+        <!-- Overlay Phase de Cache (2 minutes) -->
+        <div id="hide-phase-overlay" class="hidden absolute inset-0 z-[1600] flex flex-col items-center justify-center">
+            <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
+            <div class="relative glass p-10 rounded-[2rem] border border-white/10 text-center shadow-2xl max-w-xs w-full mx-4 flex flex-col items-center gap-4">
+                <div id="hide-phase-icon" class="text-6xl">🏃</div>
+                <div>
+                    <p id="hide-phase-label" class="text-[10px] font-black uppercase tracking-widest mb-2 text-orange-400">Allez vous cacher !</p>
+                    <p id="hide-phase-timer" class="text-6xl font-black" style="font-family:'JetBrains Mono',monospace">2:00</p>
+                    <p id="hide-phase-sub" class="text-slate-400 text-xs mt-2">La chasse commence dans…</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Overlay Gel -->
+        <div id="freeze-overlay" class="hidden absolute inset-0 z-[2000] bg-cyan-900/40 backdrop-blur-lg flex flex-col items-center justify-center">
+            <div class="glass p-10 rounded-[2rem] border border-cyan-400/40 text-center shadow-2xl">
+                <i data-lucide="snowflake" class="w-20 h-20 text-cyan-400 mx-auto mb-4 spin-slow"></i>
+                <h2 class="text-4xl font-black uppercase mb-1">GELÉ !</h2>
+                <p class="text-cyan-300 text-xs font-bold uppercase tracking-widest">GPS brouillé — <span id="freeze-countdown">15</span>s</p>
+            </div>
+        </div>
+
+        <!-- Overlay fin de partie -->
+        <div id="end-overlay" class="hidden absolute inset-0 z-[3000] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center">
+            <div class="glass p-10 rounded-[2rem] border border-white/10 text-center shadow-2xl max-w-xs w-full mx-4">
+                <p class="text-6xl mb-4">⏱️</p>
+                <h2 class="text-4xl font-black uppercase mb-2">Temps écoulé !</h2>
+                <p class="text-slate-400 text-sm mb-8">La partie est terminée.</p>
+                <button class="btn-primary" onclick="location.reload()">REJOUER</button>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  ÉTAT GLOBAL
+// ═══════════════════════════════════════════════════════════════
+let myRole = null;
+let myName = '';
+let roomID = '';
+let myPeerId = '';
+let peer = null;
+let connections = {}; // peerId → DataConnection
+let players = {};     // peerId → { name, role, lat, lng, frozen }
+let map = null;
+let markers = {};
+let timeLeft = 600;
+let timerInterval = null;
+let gpsInterval = null;
+let myLat = null, myLng = null;
+let isFrozen = false;
+let freezeUsesLeft = 3;
+let freezeCountdownInterval = null;
+
+// ═══════════════════════════════════════════════════════════════
+//  ÉCRAN BIENVENUE
+// ═══════════════════════════════════════════════════════════════
+function requestGpsAndLobby() {
+    const btn = event.currentTarget;
+    const status = document.getElementById('gps-status');
+    btn.disabled = true;
+    btn.textContent = 'GPS...';
+    status.classList.remove('hidden');
+
+    navigator.geolocation.getCurrentPosition(
+        (pos) => {
+            myLat = pos.coords.latitude;
+            myLng = pos.coords.longitude;
+            show('step-lobby');
+        },
+        () => {
+            btn.disabled = false;
+            btn.textContent = 'COMMENCER';
+            status.textContent = 'GPS refusé — requis pour jouer.';
+            status.classList.add('text-red-400');
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  LOBBY
+// ═══════════════════════════════════════════════════════════════
+function setRole(role) {
+    myRole = role;
+    const hiderBtn = document.getElementById('btn-hider');
+    const seekerBtn = document.getElementById('btn-seeker');
+    hiderBtn.className = 'role-btn' + (role === 'hider' ? ' selected-hider' : '');
+    seekerBtn.className = 'role-btn' + (role === 'seeker' ? ' selected-seeker' : '');
+}
+
+function startGame() {
+    myName = document.getElementById('input-name').value.trim().toUpperCase();
+    roomID = document.getElementById('input-gameid').value.trim().toUpperCase().replace(/\s+/g, '-');
+
+    if (!myName) return showLobbyError('Entre ton pseudo !');
+    if (!roomID) return showLobbyError('Entre un code de lobby !');
+    if (!myRole) return showLobbyError('Choisis un rôle !');
+
+    document.getElementById('lobby-status').classList.remove('hidden');
+    setLobbyStatus('Connexion P2P en cours…', '');
+    document.getElementById('btn-deploy').disabled = true;
+
+    initPeer();
+}
+
+function showLobbyError(msg) {
+    setLobbyStatus(msg, '');
+    document.getElementById('lobby-status').classList.remove('hidden');
+    document.getElementById('lobby-status-label').classList.add('text-red-400');
+    document.getElementById('lobby-status-label').classList.remove('text-indigo-400');
+}
+
+function setLobbyStatus(label, detail) {
+    document.getElementById('lobby-status-label').textContent = label;
+    document.getElementById('lobby-status-detail').textContent = detail;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  P2P — PeerJS
+// ═══════════════════════════════════════════════════════════════
+
+// On utilise le roomID + un index pour les peer IDs prévisibles.
+// L'hôte prend roomID + "-0", les autres cherchent en rejoignant -0.
+// Si l'hôte est absent on devient l'hôte.
+
+function sanitizePeerId(s) {
+    // PeerJS peer IDs : lettres, chiffres, tirets seulement
+    return s.replace(/[^a-zA-Z0-9\-]/g, '-').substring(0, 40);
+}
+
+function initPeer() {
+    const hostPeerId = sanitizePeerId('GEOCACHE-' + roomID + '-HOST');
+    myPeerId = sanitizePeerId('GEOCACHE-' + roomID + '-' + Date.now());
+
+    peer = new Peer(myPeerId, {
+        debug: 0,
+        config: {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        }
+    });
+
+    peer.on('open', (id) => {
+        setLobbyStatus('Connecté !', 'Rejoindre la salle…');
+        // Tenter de se connecter à l'hôte
+        tryConnectToHost(hostPeerId);
+    });
+
+    peer.on('connection', (conn) => {
+        setupConnection(conn);
+    });
+
+    peer.on('error', (err) => {
+        console.warn('Peer error:', err.type, err);
+        if (err.type === 'peer-unavailable') {
+            // L'hôte n'existe pas encore — on devient l'hôte (reconnect avec ID fixe)
+            becomeHost(hostPeerId);
+        } else if (err.type === 'unavailable-id') {
+            // ID déjà pris, générer un nouveau
+            myPeerId = sanitizePeerId('GEOCACHE-' + roomID + '-' + Math.random().toString(36).substr(2,6));
+            peer.destroy();
+            peer = null;
+            initPeer();
+        } else {
+            setLobbyStatus('Erreur réseau', err.type);
+        }
+    });
+}
+
+function tryConnectToHost(hostPeerId) {
+    const conn = peer.connect(hostPeerId, { reliable: true, metadata: { name: myName, role: myRole } });
+
+    conn.on('open', () => {
+        setLobbyStatus('Lobby rejoint !', 'Lancement…');
+        setupConnection(conn);
+        setTimeout(launchGame, 800);
+    });
+
+    conn.on('error', () => {
+        becomeHost(hostPeerId);
+    });
+
+    // Timeout : si pas de réponse en 3s → devenir hôte
+    setTimeout(() => {
+        if (!conn.open) becomeHost(hostPeerId);
+    }, 3000);
+}
+
+function becomeHost(hostPeerId) {
+    amHost = true;
+    setLobbyStatus('Création du lobby…', 'Tu es l\'hôte');
+    peer.destroy();
+
+    peer = new Peer(hostPeerId, {
+        debug: 0,
+        config: {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        }
+    });
+
+    peer.on('open', () => {
+        setLobbyStatus('Lobby créé !', 'En attente des autres…');
+        myPeerId = hostPeerId;
+        setTimeout(launchGame, 800);
+    });
+
+    peer.on('connection', (conn) => {
+        setupConnection(conn);
+        // Partager la liste des joueurs existants au nouveau venu
+        conn.on('open', () => {
+            conn.send({ type: 'welcome', players: serializePlayers() });
+        });
+    });
+
+    peer.on('error', (err) => {
+        console.error('Host peer error:', err);
+        setLobbyStatus('Erreur de connexion', 'Vérifie ta connexion internet');
+    });
+}
+
+function setupConnection(conn) {
+    const pid = conn.peer;
+    connections[pid] = conn;
+
+    conn.on('data', (data) => handleMessage(pid, data));
+
+    conn.on('close', () => {
+        delete connections[pid];
+        delete players[pid];
+        updateSquadUI();
+        updateMarkers();
+    });
+
+    conn.on('error', () => {
+        delete connections[pid];
+        delete players[pid];
+        updateSquadUI();
+        updateMarkers();
+    });
+}
+
+function broadcast(data) {
+    Object.values(connections).forEach(conn => {
+        if (conn.open) {
+            try { conn.send(data); } catch(e) {}
+        }
+    });
+}
+
+function handleMessage(fromPeerId, data) {
+    if (!data || !data.type) return;
+
+    switch (data.type) {
+        case 'position':
+            players[fromPeerId] = {
+                name: data.name,
+                role: data.role,
+                lat: data.lat,
+                lng: data.lng,
+                frozen: data.frozen || false,
+                peerId: fromPeerId
+            };
+            updateSquadUI();
+            updateMarkers();
+            updateLobbySquadPanel();
+            // Relayer aux autres (mesh simple)
+            Object.entries(connections).forEach(([pid, conn]) => {
+                if (pid !== fromPeerId && conn.open) {
+                    try { conn.send(data); } catch(e) {}
+                }
+            });
+            break;
+
+        case 'start_hide_phase':
+            startHidePhase();
+            break;
+
+        case 'freeze':
+            if (players[myPeerId] && players[myPeerId].role === 'hider') {
+                triggerFreezeOnMe();
+            }
+            // Relayer
+            Object.entries(connections).forEach(([pid, conn]) => {
+                if (pid !== fromPeerId && conn.open) {
+                    try { conn.send(data); } catch(e) {}
+                }
+            });
+            break;
+
+        case 'welcome':
+            if (data.players) {
+                Object.assign(players, data.players);
+                updateSquadUI();
+                updateMarkers();
+            }
+            break;
+    }
+}
+
+function serializePlayers() {
+    return Object.fromEntries(
+        Object.entries(players).map(([k, v]) => [k, { ...v }])
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  LANCEMENT DU JEU
+// ═══════════════════════════════════════════════════════════════
+let amHost = false;
+
+function launchGame() {
+    show('step-playing');
+
+    document.getElementById('display-name').textContent = myName;
+    document.getElementById('display-role').textContent = myRole === 'hider' ? 'Caché' : 'Chasseur';
+    document.getElementById('role-icon-box').textContent = myRole === 'hider' ? '🏃' : '🔍';
+    document.getElementById('display-room').textContent = '#' + roomID;
+
+    players[myPeerId] = { name: myName, role: myRole, lat: myLat, lng: myLng, frozen: false, peerId: myPeerId };
+
+    initMap();
+    startGPSLoop();
+    updateSquadUI();
+    updateMarkers();
+
+    // Chasseur : bouton gel toujours visible (verrouillé)
+    if (myRole === 'seeker') {
+        document.getElementById('freeze-container').classList.remove('hidden');
+        if (window.lucide) lucide.createIcons();
+    }
+
+    // Afficher la salle d'attente ou le panel hôte
+    if (amHost) {
+        showHostPanel();
+    } else {
+        showWaitingRoom();
+    }
+
+    if (window.lucide) lucide.createIcons();
+}
+
+function showHostPanel() {
+    document.getElementById('host-launch-overlay').classList.remove('hidden');
+    updateLobbySquadPanel();
+}
+
+function showWaitingRoom() {
+    document.getElementById('waiting-overlay').classList.remove('hidden');
+    updateLobbySquadPanel();
+}
+
+function updateLobbySquadPanel() {
+    ['host-squad','waiting-squad'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.innerHTML = '';
+        Object.values(players).forEach(p => {
+            const div = document.createElement('div');
+            div.className = 'flex items-center gap-2 glass rounded-xl px-3 py-2';
+            div.innerHTML = `<span style="font-size:14px">${p.role === 'hider' ? '🏃' : '🔍'}</span>
+                <span style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.85)">${p.name}</span>
+                <span style="font-size:9px;margin-left:auto;font-weight:700;color:${p.role === 'hider' ? '#f87171' : '#818cf8'};text-transform:uppercase">${p.role === 'hider' ? 'Caché' : 'Chasseur'}</span>`;
+            el.appendChild(div);
+        });
+    });
+}
+
+function hostLaunchGame() {
+    broadcast({ type: 'start_hide_phase' });
+    startHidePhase();
+}
+
+function startHidePhase() {
+    document.getElementById('host-launch-overlay').classList.add('hidden');
+    document.getElementById('waiting-overlay').classList.add('hidden');
+    document.getElementById('hide-phase-overlay').classList.remove('hidden');
+
+    // Personnaliser selon le rôle
+    if (myRole === 'seeker') {
+        document.getElementById('hide-phase-icon').textContent = '👁️';
+        document.getElementById('hide-phase-label').textContent = 'Les cachés se planquent…';
+        document.getElementById('hide-phase-sub').textContent = 'La chasse commence dans…';
+        document.getElementById('hide-phase-label').className = 'text-[10px] font-black uppercase tracking-widest mb-2 text-indigo-400';
+    } else {
+        document.getElementById('hide-phase-icon').textContent = '🏃';
+        document.getElementById('hide-phase-label').textContent = 'Allez vous cacher !';
+        document.getElementById('hide-phase-sub').textContent = 'La chasse commence dans…';
+    }
+
+    let hideLeft = 120;
+    const hideInterval = setInterval(() => {
+        hideLeft--;
+        const m = Math.floor(hideLeft / 60);
+        const s = hideLeft % 60;
+        document.getElementById('hide-phase-timer').textContent = `${m}:${s < 10 ? '0' : ''}${s}`;
+
+        if (hideLeft <= 0) {
+            clearInterval(hideInterval);
+            document.getElementById('hide-phase-overlay').classList.add('hidden');
+            startMainTimer();
+        }
+    }, 1000);
+}
+
+function startMainTimer() {
+    startTimer();
+}
+
+function initMap() {
+    if (map) return;
+    map = L.map('map-container', { zoomControl: false, attributionControl: false })
+           .setView([myLat || 42.2333, myLng || 9.1667], 17);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19
+    }).addTo(map);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TIMER PRINCIPAL (10 min)
+// ═══════════════════════════════════════════════════════════════
+function startTimer() {
+    timerInterval = setInterval(() => {
+        timeLeft--;
+        const m = Math.floor(timeLeft / 60);
+        const s = timeLeft % 60;
+        document.getElementById('timer-text').textContent = `${m}:${s < 10 ? '0' : ''}${s}`;
+
+        // Débloquer le gel exactement à 7:00 (420s restantes)
+        if (myRole === 'seeker' && timeLeft <= 420) {
+            const btn = document.getElementById('btn-freeze');
+            btn.disabled = false;
+            btn.classList.remove('opacity-40', 'cursor-not-allowed', 'border-slate-700');
+            btn.classList.add('border-cyan-500/40', 'active:scale-95');
+            btn.innerHTML = `<i data-lucide="snowflake" class="w-7 h-7 text-cyan-400"></i><span class="text-[8px] font-black uppercase text-cyan-300 mt-0.5">Geler</span>`;
+            document.getElementById('freeze-uses').textContent = freezeUsesLeft + ' charge' + (freezeUsesLeft > 1 ? 's' : '');
+            if (window.lucide) lucide.createIcons();
+        }
+
+        if (timeLeft <= 0) {
+            clearInterval(timerInterval);
+            document.getElementById('end-overlay').classList.remove('hidden');
+        }
+    }, 1000);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  GPS — watchPosition automatique, envoi toutes les 10s
+// ═══════════════════════════════════════════════════════════════
+let lastSendTime = 0;
+
+function startGPSLoop() {
+    navigator.geolocation.watchPosition(
+        (pos) => {
+            myLat = pos.coords.latitude;
+            myLng = pos.coords.longitude;
+
+            // Toujours mettre à jour ma propre position locale
+            if (players[myPeerId]) {
+                players[myPeerId].lat = myLat;
+                players[myPeerId].lng = myLng;
+            }
+            updateMarkers();
+
+            // Envoyer aux autres seulement toutes les 10s (et pas si gelé)
+            const now = Date.now();
+            if (!isFrozen && now - lastSendTime >= 10000) {
+                lastSendTime = now;
+                broadcast({
+                    type: 'position',
+                    name: myName,
+                    role: myRole,
+                    lat: myLat,
+                    lng: myLng,
+                    frozen: false,
+                    peerId: myPeerId
+                });
+            }
+        },
+        null,
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  GEL
+// ═══════════════════════════════════════════════════════════════
+function triggerFreeze() {
+    if (freezeUsesLeft <= 0) return;
+    freezeUsesLeft--;
+    const usesEl = document.getElementById('freeze-uses');
+    usesEl.textContent = freezeUsesLeft + ' charge' + (freezeUsesLeft > 1 ? 's' : '');
+    if (freezeUsesLeft === 0) {
+        document.getElementById('btn-freeze').disabled = true;
+        document.getElementById('btn-freeze').classList.add('opacity-40');
+    }
+    broadcast({ type: 'freeze' });
+    showP2PStatus('❄️ Gel envoyé !');
+}
+
+function triggerFreezeOnMe() {
+    if (isFrozen) return;
+    isFrozen = true;
+    let secs = 15;
+
+    document.getElementById('freeze-overlay').classList.remove('hidden');
+    document.getElementById('freeze-countdown').textContent = secs;
+
+    freezeCountdownInterval = setInterval(() => {
+        secs--;
+        document.getElementById('freeze-countdown').textContent = secs;
+        if (secs <= 0) {
+            clearInterval(freezeCountdownInterval);
+            isFrozen = false;
+            document.getElementById('freeze-overlay').classList.add('hidden');
+        }
+    }, 1000);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CARTE — MARQUEURS
+// ═══════════════════════════════════════════════════════════════
+function updateMarkers() {
+    if (!map) return;
+
+    Object.entries(players).forEach(([pid, p]) => {
+        if (!p.lat || !p.lng) return;
+
+        const isMe = pid === myPeerId;
+        const isHider = p.role === 'hider';
+
+        // Les cachés ne voient pas les chasseurs (sauf eux-mêmes)
+        if (myRole === 'hider' && !isHider && !isMe) {
+            if (markers[pid]) { markers[pid].remove(); delete markers[pid]; }
+            return;
+        }
+
+        let html;
+        if (isHider) {
+            const color = isMe ? '#eab308' : '#ef4444';
+            const label = isMe ? 'MOI' : p.name;
+            html = `
+                <div style="position:relative;display:flex;flex-direction:column;align-items:center;width:60px;">
+                    <div class="pulse-ring" style="background:${color}33;border:2px solid ${color};top:0;left:10px;width:40px;height:40px;"></div>
+                    <div style="width:40px;height:40px;border-radius:50%;background:${color};border:3px solid white;display:flex;align-items:center;justify-content:center;font-size:18px;position:relative;z-index:2;box-shadow:0 0 16px ${color}88;">🎯</div>
+                    <div class="marker-label" style="background:${color};color:white;padding:2px 6px;border-radius:20px;margin-top:3px;border:1.5px solid white;white-space:nowrap;">${label}</div>
+                </div>`;
+        } else {
+            const color = isMe ? '#6366f1' : '#64748b';
+            const label = isMe ? 'MOI' : p.name;
+            html = `
+                <div style="display:flex;flex-direction:column;align-items:center;width:50px;">
+                    <div style="width:36px;height:36px;border-radius:50%;background:${color};border:2.5px solid white;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 4px 12px #0008;">🔍</div>
+                    <div class="marker-label" style="background:#0f172a;color:white;padding:2px 5px;border-radius:12px;margin-top:2px;border:1px solid rgba(255,255,255,0.15);white-space:nowrap;">${label}</div>
+                </div>`;
+        }
+
+        const icon = L.divIcon({ html, iconSize: [60, 70], iconAnchor: [30, 35] });
+
+        if (markers[pid]) {
+            markers[pid].setLatLng([p.lat, p.lng]);
+            markers[pid].setIcon(icon);
+        } else {
+            markers[pid] = L.marker([p.lat, p.lng], { icon }).addTo(map);
+        }
+    });
+
+    // Supprimer les marqueurs des joueurs déconnectés
+    Object.keys(markers).forEach(pid => {
+        if (!players[pid]) {
+            markers[pid].remove();
+            delete markers[pid];
+        }
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  ESCOUADE UI
+// ═══════════════════════════════════════════════════════════════
+function updateSquadUI() {
+    const list = document.getElementById('squad-list');
+    const count = document.getElementById('player-count');
+    list.innerHTML = '';
+    let n = 0;
+
+    Object.entries(players).forEach(([pid, p]) => {
+        n++;
+        const isMe = pid === myPeerId;
+        const el = document.createElement('div');
+        el.className = 'flex items-center gap-1.5 fade-in';
+        el.innerHTML = `
+            <span style="font-size:12px">${p.role === 'hider' ? '🏃' : '🔍'}</span>
+            <span style="font-size:10px;font-weight:700;${isMe ? 'color:#818cf8' : 'color:rgba(255,255,255,0.8)'};max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}${isMe ? ' ★' : ''}</span>
+        `;
+        list.appendChild(el);
+    });
+
+    count.textContent = n;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  UTILITAIRES
+// ═══════════════════════════════════════════════════════════════
+function show(id) {
+    ['step-welcome','step-lobby','step-playing'].forEach(s => {
+        const el = document.getElementById(s);
+        if (el) el.classList.toggle('hidden', s !== id);
+    });
+    if (window.lucide) lucide.createIcons();
+}
+
+function showP2PStatus(msg) {
+    const el = document.getElementById('p2p-status');
+    const txt = document.getElementById('p2p-status-text');
+    if (!el || !txt) return;
+    txt.textContent = msg;
+    el.classList.remove('hidden');
+    setTimeout(() => el.classList.add('hidden'), 3000);
+}
+
+// Enregistrement du Service Worker (PWA)
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/geocache/sw.js');
+  });
+}
+
+// Init icônes
+window.addEventListener('load', () => {
+    if (window.lucide) lucide.createIcons();
+});
+</script>
+</body>
+</html>
