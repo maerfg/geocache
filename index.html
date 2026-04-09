@@ -964,7 +964,7 @@ function triggerClone() {
     const cloneLng = myLng + dLng;
 
     broadcast({ type: 'clone', peerId: myPeerId, name: myName, lat: cloneLat, lng: cloneLng });
-    showP2PStatus('👤 Clone déployé !');
+    showP2PStatus('🎯 Clone déployé !');
 
     if (cloneUsesLeft === 0) {
         btn.disabled = true;
