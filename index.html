@@ -942,7 +942,12 @@ function playSeekerSoundOnMe(soundId) {
 // ═══════════════════════════════════════════════════════════════
 let cloneUsesLeft = 2;
 let cloneCooldown = false;
-let cloneMarkers = {}; // peerId → marker
+const snd = document.getElementById('clone-sound');
+if (snd) {
+    snd.currentTime = 0;
+    snd.play().catch(() => {});
+}
+    let cloneMarkers = {}; // peerId → marker
 
 function triggerClone() {
     if (cloneUsesLeft <= 0 || cloneCooldown) return;
@@ -1157,5 +1162,6 @@ window.addEventListener('load', () => {
     if (window.lucide) lucide.createIcons();
 });
 </script>
+<audio id="clone-sound" src="clone.mp3" preload="auto"></audio>
 </body>
 </html>
